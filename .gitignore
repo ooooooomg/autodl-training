@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# 敏感信息（绝不上传真实凭据）
+*.env
+.env
+.env.local
+credentials
+secrets
+*.pem
+*.key
+
+# 编辑器/OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 日志与临时
+*.log
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# 测试/覆盖
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 训练产物（若在仓库内产生）
+*.pt
+*.pth
+*.ckpt
+checkpoints/
+results/
