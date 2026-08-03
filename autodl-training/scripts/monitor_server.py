@@ -19,10 +19,10 @@ import urllib.request
 WXPUSHER_TOKEN = os.environ.get("WXPUSHER_TOKEN", "AT_xxx")  # wxpusher appToken
 WXPUSHER_UID = os.environ.get("WXPUSHER_UID", "UID_xxx")     # wxpusher uid
 REMOTE = "/root/autodl-tmp/PROJ"  # 服务器工作目录
-OUTPUT_DIR = "checkpoints/full"   # 训练输出子目录（相对 REMOTE）
+OUTPUT_DIR = "checkpoints"        # 训练输出子目录（相对 REMOTE，按实际训练脚本设置）
 TRAIN_LOG = "train.log"           # 训练日志文件名（相对 REMOTE，与启动脚本一致）
-STAGE1_EPOCHS = 7              # Stage1 总 epoch
-STAGE2_EPOCHS = 1              # Stage2 总 epoch
+STAGE1_EPOCHS = 10             # Stage1 总 epoch（按训练脚本实际配置修改）
+STAGE2_EPOCHS = 1              # Stage2 总 epoch（按训练脚本实际配置修改）
 CHECK_INTERVAL = 3600          # 检查间隔秒（默认 1 小时）
 # ==============================================================
 API = "https://wxpusher.zjiecode.com/api/send/message"
