@@ -24,6 +24,13 @@ TRAIN_LOG = "train.log"           # 训练日志文件名（相对 REMOTE，与�
 STAGE1_EPOCHS = 10             # Stage1 总 epoch（按训练脚本实际配置修改）
 STAGE2_EPOCHS = 1              # Stage2 总 epoch（按训练脚本实际配置修改）
 CHECK_INTERVAL = 3600          # 检查间隔秒（默认 1 小时）
+# 训练产物命名约定（按实际训练脚本调整）：
+STAGE1_PREFIX = "stage1_epoch"   # Stage1 各 epoch checkpoint 前缀
+STAGE2_PREFIX = "stage2_epoch"   # Stage2 各 epoch checkpoint 前缀
+STAGE1_FINAL = "stage1_final.pth" # Stage1 最终 checkpoint 文件名
+FINAL_PATTERN = "final|model"     # 最终模型文件名匹配模式（grep -E）
+STAGE1_LABEL = "Stage 1"          # Stage1 显示标签
+STAGE2_LABEL = "Stage 2"          # Stage2 显示标签
 # ==============================================================
 API = "https://wxpusher.zjiecode.com/api/send/message"
 
@@ -71,11 +78,11 @@ def collect():
             data["gpu_util"], data["mem_used"], data["mem_total"] = \
                 parts[0].strip(), parts[1].strip(), parts[2].strip()
     data["nproc"] = sh(f"ps aux | grep train | grep -v grep | wc -l").strip()
-    ckpt_lines = sh(f"ls {out}/ 2>/dev/null | grep -E 'stage[12]_epoch[0-9]+'").strip().splitlines()
-    data["stage1_done"] = sum(1 for l in ckpt_lines if "stage1_epoch" in l)
-    data["stage2_done"] = sum(1 for l in ckpt_lines if "stage2_epoch" in l)
-    data["has_stage1_final"] = sh(f"test -f {out}/stage1_final.pth && echo yes || echo no").strip()
-    data["has_final"] = sh(f"test -f {out}/stage1_final.pth || ls {out}/ 2>/dev/null | grep -qE 'final|model' && echo yes || echo no").strip()
+    ckpt_lines = sh(f"ls {out}/ 2>/dev/null | grep -E '{STAGE1_PREFIX}|{STAGE2_PREFIX}|{FINAL_PATTERN}'").strip().splitlines()
+    data["stage1_done"] = sum(1 for l in ckpt_lines if STAGE1_PREFIX in l)
+    data["stage2_done"] = sum(1 for l in ckpt_lines if STAGE2_PREFIX in l)
+    data["has_stage1_final"] = sh(f"test -f {out}/{STAGE1_FINAL} && echo yes || echo no").strip()
+    data["has_final"] = sh(f"ls {out}/ 2>/dev/null | grep -qE '{FINAL_PATTERN}' && echo yes || echo no").strip()
     steps = sh(f"tail -1 {out}/steps.jsonl 2>/dev/null").strip()
     if steps:
         try:
@@ -108,16 +115,16 @@ def build_text(s):
     if s.get("has_final") == "yes":
         lines.append("🎉 训练已完成！")
     elif s.get("has_stage1_final") == "yes":
-        lines.append("📌 当前阶段: Stage 2（特征对齐微调）")
+        lines.append(f"📌 当前阶段: {STAGE2_LABEL}")
         lines.append(f"   第 {s.get('epoch','?')} epoch / 共 {STAGE2_EPOCHS} epoch")
     elif s.get("stage") is not None:
         if s["stage"] == 1:
             ep = s.get("epoch", 0)
-            lines.append(f"📌 当前阶段: Stage 1（结构蒸馏）")
+            lines.append(f"📌 当前阶段: {STAGE1_LABEL}")
             lines.append(f"   第 {ep+1} epoch / 共 {STAGE1_EPOCHS} epoch")
             lines.append(f"   已完成 checkpoint: {s['stage1_done']} 个")
         else:
-            lines.append("📌 当前阶段: Stage 2（特征对齐微调）")
+            lines.append(f"📌 当前阶段: {STAGE2_LABEL}")
     else:
         log = s.get("log_tail", "")
         if "recompute" in log or "precompute" in log or "cache" in log:
