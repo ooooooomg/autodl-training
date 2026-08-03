@@ -1,6 +1,6 @@
 ---
 name: autodl-training
-description: 云 GPU 训练全流程：部署、监控、评估与报告。覆盖：SSH/SFTP 连接、环境配置、代码/权重/数据上传(断点续传)、远程启动训练(nohup后台)、每小时训练监控与异常检测、wxpusher 微信推送、训练后模型评估(COCO/LVIS/dense/detection)、与论文结果对比、训练loss可视化、LaTeX实验笔记编译PDF。触发词：autodl、云服务器、远程训练、SSH上传、训练监控、微信推送训练进度、GPU云训练、评估模型、跑评估、实验报告、训练笔记、loss可视化、与论文对比、编译PDF。
+description: 云 GPU 训练全流程：部署、监控、评估与报告。覆盖：SSH/SFTP 连接、环境配置、代码/权重/数据上传(断点续传)、远程启动训练(nohup后台)、每小时训练监控与异常检测、wxpusher 微信推送、训练后模型评估与论文对比、训练loss可视化、LaTeX实验笔记编译PDF。触发词：autodl、云服务器、远程训练、SSH上传、训练监控、微信推送训练进度、GPU云训练、评估模型、跑评估、实验报告、训练笔记、loss可视化、与论文对比、编译PDF。
 ---
 
 # AutoDL 远程训练部署与监控
@@ -167,25 +167,29 @@ python scripts/wxpush.py "标题" "内容"        # 发送
 
 ## Step 7: 训练完成后的评估
 
-训练产出最终模型后，对模型做系统评估（分割/检测指标），对比论文目标，并生成可视化与实验笔记。
+训练产出最终模型后，对模型做系统评估（按项目领域选择指标），对比论文目标，并生成可视化与实验笔记。
+
+> 评估协议**因项目而异**。以下以图像分割/检测类项目（如 SAM 家族）为例，其他领域按实际调整。
 
 ### 7.1 评估脚本
 
-评估脚本通常位于项目的 `eval/` 目录（下述为蒸馏类项目常见结构）：
+评估脚本通常位于项目的 `eval/` 目录。分割/检测类项目的常见形态：
 
-- `eval_box_prompt.py` — box / box+1pt / box+2pt（COCO/LVIS）
-- `eval_dense_seg.py` — dense 分割（100-500 点，`--points_per_side 10 14 17 20 22`）
+- `eval_box_prompt.py` — box / box+1pt / box+2pt prompt 分割（COCO/LVIS）
+- `eval_dense_seg.py` — dense 分割（`--points_per_side 10 14 17 20 22`）
 - `eval_detection.py` — detection-assisted（需 `--precomputed_detections`）
 - 一键串行跑全套件：`run_local_eval.py`
+
+（非分割类项目：替换为对应领域的评估脚本，如分类用 accuracy/top-k，检测用 mAP 等。）
 
 ### 7.2 评估关键注意（实测）
 
 - **cv2 中文路径 bug**：含中文的绝对路径（如 `E:\某项目`）会让 `cv2.imread` 失败。
   评估必须用**相对路径**（cwd 在项目根）+ 相对路径参数。
-- **detection 图片路径**：若图片嵌套一层（`val2017/val2017`），
+- **图片嵌套路径**：若图片嵌套一层（`val2017/val2017`），
   `--coco_root` 要指到内层（`DATA/val2017`），脚本内部会 `os.path.join(coco_root, "val2017")`。
-- **dense 全量很慢**（自动掩码生成），先用 `--max_samples 100` 冒烟。
-- 全量 COCO box-prompt（约 5000 图）约 8 分钟；dense 100 图约 2.5 分钟（示例耗时，按硬件/数据规模浮动）。
+- **全量评估很慢**：先用 `--max_samples` 少量样本冒烟，再跑全量。
+- 全量评估耗时（约 5000 图 8 分钟等）按硬件/数据规模浮动。
 
 ### 7.3 可视化
 
