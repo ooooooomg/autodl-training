@@ -23,7 +23,7 @@ PASSWORD = os.environ.get("SSH_PASSWORD", "YOUR_PASSWORD")  # SSH 密码
 LOCAL_DATA = os.environ.get("LOCAL_DATA", "E:/path/to/DATA")  # 本地数据目录（含各 shard 子目录）
 REMOTE_BASE = os.environ.get("REMOTE_DATA", "/root/autodl-tmp/PROJ/DATA")  # 服务器目标目录
 SHARDS = None                            # 如 ["sa_000000","sa_000001"]；None=自动发现
-EXPECTED_FILES = 11186                   # 每个 shard 预期文件数（校验用，按实际调整）
+EXPECTED_FILES = 0                         # 每个 shard 预期文件数（校验用，填 0 则只检查存在）
 # ===============================================================
 
 
