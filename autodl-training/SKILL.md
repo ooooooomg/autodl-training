@@ -1,6 +1,6 @@
 ---
 name: autodl-training
-description: 在 AutoDL 云服务器上部署并监控远程深度学习训练。覆盖：SSH/SFTP 连接、环境检查与配置、代码与数据上传(断点续传)、远程启动训练(nohup后台)、每小时训练进度监控与异常检测、wxpusher 微信推送。触发词：autodl、云服务器、远程训练、SSH上传、训练监控、微信推送训练进度、GPU云训练、部署训练到服务器。
+description: 云 GPU 训练全流程：部署、监控、评估与报告。覆盖：SSH/SFTP 连接、环境配置、代码/权重/数据上传(断点续传)、远程启动训练(nohup后台)、每小时训练监控与异常检测、wxpusher 微信推送、训练后模型评估(COCO/LVIS/dense/detection)、与论文结果对比、训练loss可视化、LaTeX实验笔记编译PDF。触发词：autodl、云服务器、远程训练、SSH上传、训练监控、微信推送训练进度、GPU云训练、评估模型、跑评估、实验报告、训练笔记、loss可视化、与论文对比、编译PDF。
 ---
 
 # AutoDL 远程训练部署与监控
@@ -13,6 +13,8 @@ description: 在 AutoDL 云服务器上部署并监控远程深度学习训练�
 - 需要把本地代码、权重、数据传到远程服务器
 - 需要长时间训练（数小时到数天）并自动监控
 - 需要把训练进度和异常推送到微信
+- 训练完成后需要评估模型质量（box-prompt / dense / detection）
+- 需要把实测结果与论文数字对比、生成可视化曲线和实验笔记
 
 ## 触发后先收集配置
 
@@ -25,6 +27,9 @@ skill 触发后，先向用户询问下列信息，不要直接执行脚本。�
 5. 教师权重、学生权重的本地路径
 6. 训练数据本地路径
 7. 训练超参：batch_size、epochs、max_samples、image_size 等（用户未指定时用默认值并确认）
+8. （训练后评估）评估数据位置：COCO val / LVIS / 检测框
+9. （训练后评估）论文目标数字（用于对比）
+10. （训练后评估）是否生成训练曲线 / 实验笔记 PDF
 
 用 `AskUserQuestion` 逐个询问，不要一次性堆给用户。收集完后把凭据写入环境变量（`SSH_HOST` 等），运行 `ssh_helper.py check` 和 `wxpush.py check` 验证，再按下面各 Step 执行。若走全自动，最后运行 `orchestrator.py`。
 
@@ -162,7 +167,42 @@ python scripts/wxpush.py "标题" "内容"        # 发送
 
 ## Step 7: 训练完成后的评估
 
-训练产出最终模型后，在服务器上运行评估脚本，结果与论文目标值或基线对比。评估通常需要验证集标注（如 COCO instances_val2017.json）和预计算的检测框。
+训练产出最终模型后，对模型做系统评估（分割/检测指标），对比论文目标，并生成可视化与实验笔记。
+
+### 7.1 评估脚本
+
+评估脚本通常位于项目的 `eval/` 目录（下述为蒸馏类项目常见结构）：
+
+- `eval_box_prompt.py` — box / box+1pt / box+2pt（COCO/LVIS）
+- `eval_dense_seg.py` — dense 分割（100-500 点，`--points_per_side 10 14 17 20 22`）
+- `eval_detection.py` — detection-assisted（需 `--precomputed_detections`）
+- 一键串行跑全套件：`run_local_eval.py`
+
+### 7.2 评估关键注意（实测）
+
+- **cv2 中文路径 bug**：含中文的绝对路径（如 `E:\某项目`）会让 `cv2.imread` 失败。
+  评估必须用**相对路径**（cwd 在项目根）+ 相对路径参数。
+- **detection 图片路径**：若图片嵌套一层（`val2017/val2017`），
+  `--coco_root` 要指到内层（`DATA/val2017`），脚本内部会 `os.path.join(coco_root, "val2017")`。
+- **dense 全量很慢**（自动掩码生成），先用 `--max_samples 100` 冒烟。
+- 全量 COCO box-prompt（约 5000 图）约 8 分钟；dense 100 图约 2.5 分钟（示例耗时，按硬件/数据规模浮动）。
+
+### 7.3 可视化
+
+训练曲线脚本 `scripts/plot_training_loss.py`（读 `steps.jsonl`，输出 `training_curve.png`）：
+五面板训练曲线（全 loss / Stage1 / Stage2 / 梯度范数 / 每 epoch 均值）。
+
+### 7.4 实验笔记（LaTeX → PDF）
+
+- LaTeX 模板 `experiment_notes/training_notes.tex`
+- 用 **xelatex** 编译（支持中文）：`xelatex -interaction=nonstopmode training_notes.tex`
+- 中文需 `\usepackage[UTF8]{ctex}`
+- MiKTeX 路径示例：`/d/miktex/miktex/bin/x64/xelatex`
+
+### 7.5 结果对比与推送
+
+- 实测 vs 论文目标，按"达到论文百分比"评估（蒸馏模型通常可达基线 90% 以上）
+- 结果用 `wxpush.py` 推送到微信（含对比表、PDF 路径）
 
 ---
 
