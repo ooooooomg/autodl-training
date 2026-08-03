@@ -29,6 +29,7 @@ REMOTE = "/root/autodl-tmp/PROJ"          # 服务器工作目录
 TEACHER_PATH = f"{REMOTE}/weights/teacher.pth"   # 教师权重路径
 TEACHER_SIZE = 0                            # 教师权重预期字节数（填 0 则只检查存在）
 DATA_DIR = f"{REMOTE}/DATA"                 # 服务器数据目录
+DATA_GLOB = "sa_*"                          # 数据分片目录 glob 模式（按实际数据命名修改）
 TARGET_SHARDS = 0                           # 数据 shard 总数（按实际填，填 0 表示跳过数据检查）
 TARGET_IMAGES = 0                           # 每个 shard 预期文件数（按实际填）
 
@@ -91,7 +92,7 @@ def check_teacher_ready(c):
 
 def check_data_status(c):
     """返回 (就绪 shard 数, 缺失列表)。"""
-    rc, out, _ = remote(c, f'for d in {DATA_DIR}/sa_*; do n=$(ls $d 2>/dev/null | wc -l); echo "$(basename $d):$n"; done')
+    rc, out, _ = remote(c, f'for d in {DATA_DIR}/{DATA_GLOB}; do n=$(ls $d 2>/dev/null | wc -l); echo "$(basename $d):$n"; done')
     ready, missing = [], []
     for line in out.strip().splitlines():
         if not line.strip():
