@@ -29,8 +29,8 @@ REMOTE = "/root/autodl-tmp/PROJ"          # 服务器工作目录
 TEACHER_PATH = f"{REMOTE}/weights/teacher.pth"   # 教师权重路径
 TEACHER_SIZE = 0                            # 教师权重预期字节数（填 0 则只检查存在）
 DATA_DIR = f"{REMOTE}/DATA"                 # 服务器数据目录
-TARGET_SHARDS = 13                          # 数据 shard 总数
-TARGET_IMAGES = 11186                       # 每个 shard 预期文件数
+TARGET_SHARDS = 0                           # 数据 shard 总数（按实际填，填 0 表示跳过数据检查）
+TARGET_IMAGES = 0                           # 每个 shard 预期文件数（按实际填）
 
 WXPUSHER_TOKEN = os.environ.get("WXPUSHER_TOKEN", "")
 WXPUSHER_UID = os.environ.get("WXPUSHER_UID", "")
