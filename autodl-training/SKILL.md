@@ -178,7 +178,7 @@ python scripts/wxpush.py "标题" "内容"        # 发送
 - `eval_box_prompt.py` — box / box+1pt / box+2pt prompt 分割（COCO/LVIS）
 - `eval_dense_seg.py` — dense 分割（`--points_per_side 10 14 17 20 22`）
 - `eval_detection.py` — detection-assisted（需 `--precomputed_detections`）
-- 一键串行跑全套件：`run_local_eval.py`
+- 一键串行跑全套件：本地评测脚本(自备,按项目实际命名)
 
 （非分割类项目：替换为对应领域的评估脚本，如分类用 accuracy/top-k，检测用 mAP 等。）
 
@@ -193,15 +193,15 @@ python scripts/wxpush.py "标题" "内容"        # 发送
 
 ### 7.3 可视化
 
-训练曲线脚本 `scripts/plot_training_loss.py`（读 `steps.jsonl`，输出 `training_curve.png`）：
+训练曲线脚本 绘图脚本(自备,如 matplotlib 简单脚本)（读 `steps.jsonl`，输出 `training_curve.png`）：
 五面板训练曲线（全 loss / Stage1 / Stage2 / 梯度范数 / 每 epoch 均值）。
 
 ### 7.4 实验笔记（LaTeX → PDF）
 
-- LaTeX 模板 `experiment_notes/training_notes.tex`
+- LaTeX 模板 实验记录(自备,路径按项目实际)
 - 用 **xelatex** 编译（支持中文）：`xelatex -interaction=nonstopmode training_notes.tex`
 - 中文需 `\usepackage[UTF8]{ctex}`
-- MiKTeX 路径示例：`/d/miktex/miktex/bin/x64/xelatex`
+- MiKTeX 路径示例：`xelatex`
 
 ### 7.5 结果对比与推送
 

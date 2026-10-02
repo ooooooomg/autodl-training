@@ -39,10 +39,23 @@ WXPUSHER_UID = os.environ.get("WXPUSHER_UID", "")
 
 
 def connect():
+    """主机密钥固定:首次连接把密钥记入 known_hosts,之后任何密钥变化
+    (可能的中間人攻击)都会被拒绝。此前无条件 AutoAddPolicy + 密码认证,
+    链路中间人可直接截获凭据。"""
+    known_hosts = os.path.join(os.path.expanduser("~"), ".ssh", "known_hosts")
     c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    c.load_host_keys(known_hosts)
+    hk = c.get_host_keys()
+    known = hk.lookup(HOST) is not None or hk.lookup(f"[{HOST}]:{PORT}") is not None
+    if known:
+        c.set_missing_host_key_policy(paramiko.RejectPolicy())
+    else:
+        print(f"[security] 首次连接 {HOST}:{PORT},记录主机密钥到 {known_hosts}", flush=True)
+        c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     c.connect(HOST, port=PORT, username=USER, password=PASSWORD,
               timeout=20, banner_timeout=30, auth_timeout=30)
+    if not known:
+        c.save_host_keys(known_hosts)
     return c
 
 
@@ -92,7 +105,7 @@ def check_teacher_ready(c):
 
 def check_data_status(c):
     """返回 (就绪 shard 数, 缺失列表)。"""
-    rc, out, _ = remote(c, f'for d in {DATA_DIR}/{DATA_GLOB}; do n=$(ls $d 2>/dev/null | wc -l); echo "$(basename $d):$n"; done')
+    rc, out, _ = remote(c, f'for d in "{DATA_DIR}"/{DATA_GLOB}; do n=$(ls "$d" 2>/dev/null | wc -l); echo "$(basename "$d"):$n"; done')
     ready, missing = [], []
     for line in out.strip().splitlines():
         if not line.strip():
@@ -143,12 +156,16 @@ def main():
               "环境变量，或改脚本配置区。", file=sys.stderr)
         sys.exit(1)
 
-    push("训练编排器启动", "自动协调流程已启动。")
+    if (TARGET_SHARDS <= 0 or TARGET_IMAGES <= 0) and "--skip-data-check" not in sys.argv:
+        # 修复:此前 TARGET_*=0(默认)时 `n>=0` 恒真,教师权重一就绪就启动
+        # 训练——零数据也会开跑,按量计费的 GPU 直接烧钱。必须显式跳过。
+        print("ERROR: TARGET_SHARDS / TARGET_IMAGES 未配置(为 0)。零数据校验下"
+              "启动训练会直接消耗计费 GPU。填好真实数值,或显式传 --skip-data-check。",
+              file=sys.stderr)
+        sys.exit(1)
+
     c = connect()
-    ok = wait_for_uploads(c)
-    if not ok:
-        push("传输失败", "数据/权重传输未在预期时间完成。")
-        return
+    wait_for_uploads(c)  # 只在就绪时返回(内部轮询),无失败分支
     started = start_training(c)
     if started:
         push("训练已启动", "完整训练已在服务器启动。")

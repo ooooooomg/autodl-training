@@ -25,10 +25,23 @@ PASSWORD = os.environ.get("SSH_PASSWORD", "YOUR_PASSWORD")
 
 
 def connect():
+    """主机密钥固定:首次连接把密钥记入 known_hosts,之后任何密钥变化
+    (可能的中間人攻击)都会被拒绝。此前无条件 AutoAddPolicy + 密码认证,
+    链路中间人可直接截获凭据。"""
+    known_hosts = os.path.join(os.path.expanduser("~"), ".ssh", "known_hosts")
     c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    c.load_host_keys(known_hosts)
+    hk = c.get_host_keys()
+    known = hk.lookup(HOST) is not None or hk.lookup(f"[{HOST}]:{PORT}") is not None
+    if known:
+        c.set_missing_host_key_policy(paramiko.RejectPolicy())
+    else:
+        print(f"[security] 首次连接 {HOST}:{PORT},记录主机密钥到 {known_hosts}", flush=True)
+        c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     c.connect(HOST, port=PORT, username=USER, password=PASSWORD,
               timeout=20, banner_timeout=30, auth_timeout=30)
+    if not known:
+        c.save_host_keys(known_hosts)
     return c
 
 

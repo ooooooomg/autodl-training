@@ -23,15 +23,29 @@ PASSWORD = os.environ.get("SSH_PASSWORD", "YOUR_PASSWORD")  # SSH 密码
 LOCAL_DATA = os.environ.get("LOCAL_DATA", "E:/path/to/DATA")  # 本地数据目录（含各 shard 子目录）
 REMOTE_BASE = os.environ.get("REMOTE_DATA", "/root/autodl-tmp/PROJ/DATA")  # 服务器目标目录
 SHARDS = None                            # 如 ["sa_000000","sa_000001"]；None=自动发现
-EXPECTED_FILES = 0                         # 每个 shard 预期文件数（校验用，填 0 则只检查存在）
+EXPECTED_FILES = 0                         # 每个 shard 预期文件数（>0 时要求恰好相等；0=只要目录存在且非空）
+TAR_MODE = os.environ.get("TAR_MODE", "gz")  # gz=压缩(小)/空串=纯 tar(图像等已压缩数据更快)
 # ===============================================================
 
 
 def connect():
+    """主机密钥固定:首次连接把密钥记入 known_hosts,之后任何密钥变化
+    (可能的中間人攻击)都会被拒绝。此前无条件 AutoAddPolicy + 密码认证,
+    链路中间人可直接截获凭据。"""
+    known_hosts = os.path.join(os.path.expanduser("~"), ".ssh", "known_hosts")
     c = paramiko.SSHClient()
-    c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    c.load_host_keys(known_hosts)
+    hk = c.get_host_keys()
+    known = hk.lookup(HOST) is not None or hk.lookup(f"[{HOST}]:{PORT}") is not None
+    if known:
+        c.set_missing_host_key_policy(paramiko.RejectPolicy())
+    else:
+        print(f"[security] 首次连接 {HOST}:{PORT},记录主机密钥到 {known_hosts}", flush=True)
+        c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     c.connect(HOST, port=PORT, username=USER, password=PASSWORD,
               timeout=30, banner_timeout=30, auth_timeout=30)
+    if not known:
+        c.save_host_keys(known_hosts)
     return c
 
 
@@ -42,11 +56,20 @@ def discover_shards():
 
 
 def remote_ok(c, shard):
-    """返回 True 如果服务器上该 shard 已有 EXPECTED_FILES 个文件。"""
+    """返回 True 表示该 shard 已在服务器上完整存在、可跳过。
+
+    语义(修复):EXPECTED_FILES>0 时要求远端文件数恰好相等;=0 时要求
+    目录存在且非空。旧实现里 EXPECTED_FILES=0(默认)时 `ls 不存在的目录
+    | wc -l` 输出 0,恰好等于 0,于是「目录不存在」被判定为「已存在」——
+    所有 shard 被跳过,数据永远传不上去(与注释「填 0 则只检查存在」相反)。"""
+    shard_path = f"{REMOTE_BASE}/{shard}"
+    if EXPECTED_FILES > 0:
+        stdin, stdout, stderr = c.exec_command(
+            f'ls "{shard_path}" 2>/dev/null | wc -l', timeout=30)
+        return stdout.read().decode().strip() == str(EXPECTED_FILES)
     stdin, stdout, stderr = c.exec_command(
-        f'ls {REMOTE_BASE}/{shard} 2>/dev/null | wc -l', timeout=30)
-    n = stdout.read().decode().strip()
-    return n == str(EXPECTED_FILES)
+        f'[ -d "{shard_path}" ] && [ -n "$(ls -A "{shard_path}")" ] && echo EXISTS', timeout=30)
+    return "EXISTS" in stdout.read().decode()
 
 
 def pack_local(shard):
@@ -55,7 +78,7 @@ def pack_local(shard):
     tar_path = os.path.join(temp_dir, f"{shard}.tar.gz")
     src_dir = os.path.join(LOCAL_DATA, shard)
     t0 = time.time()
-    with tarfile.open(tar_path, "w:gz") as tar:
+    with tarfile.open(tar_path, "w:" + TAR_MODE) as tar:
         tar.add(src_dir, arcname=shard)
     print(f"    打包完成 {time.time()-t0:.0f}s", flush=True)
     return tar_path
@@ -69,7 +92,7 @@ def upload(c, local, remote):
 
 def extract_remote(c, shard):
     stdin, stdout, stderr = c.exec_command(
-        f'cd {REMOTE_BASE} && tar -xzf {shard}.tar.gz && rm {shard}.tar.gz && echo EXTRACTED',
+        f'cd "{REMOTE_BASE}" && tar -xzf "{shard}.tar.gz" && rm "{shard}.tar.gz" && echo EXTRACTED',
         timeout=300)
     out = stdout.read().decode()
     if "EXTRACTED" not in out:
@@ -93,7 +116,7 @@ def main():
         return
 
     c = connect()
-    c.exec_command(f'mkdir -p {REMOTE_BASE}', timeout=30)
+    c.exec_command(f'mkdir -p "{REMOTE_BASE}"', timeout=30)
     total_start = time.time()
 
     for idx, shard in enumerate(shards):

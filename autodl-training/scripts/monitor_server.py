@@ -7,6 +7,7 @@
 
 推送内容：GPU占用率 / 当前训练内容 / 训练进度与状态 / 异常检测。
 """
+import html
 import json
 import os
 import re
@@ -24,6 +25,9 @@ TRAIN_LOG = "train.log"           # 训练日志文件名（相对 REMOTE，与�
 STAGE1_EPOCHS = 10             # Stage1 总 epoch（按训练脚本实际配置修改）
 STAGE2_EPOCHS = 1              # Stage2 总 epoch（按训练脚本实际配置修改）
 CHECK_INTERVAL = 3600          # 检查间隔秒（默认 1 小时）
+TRAIN_PROC_PATTERN = r"python.*train"  # 训练进程匹配(收紧:此前裸 grep train 会命中任何含 train 字样的进程)
+TAIL_LINES = 80                 # 日志尾窗(此前只看 30 行,更早的 OOM/Traceback 检测不到)
+EXIT_AFTER_FINAL = True         # 训练完成且进程退出后,推送终报并自动退出(此前无限循环永不停止)
 # 训练产物命名约定（按实际训练脚本调整）：
 STAGE1_PREFIX = "stage1_epoch"   # Stage1 各 epoch checkpoint 前缀
 STAGE2_PREFIX = "stage2_epoch"   # Stage2 各 epoch checkpoint 前缀
@@ -43,7 +47,7 @@ def push(title, content):
         return False
     payload = {
         "appToken": WXPUSHER_TOKEN,
-        "content": f"<h3>{title}</h3><pre style='white-space:pre-wrap'>{content}</pre>",
+        "content": f"<h3>{html.escape(title)}</h3><pre style='white-space:pre-wrap'>{html.escape(content)}</pre>",
         "contentType": 2,
         "uids": [WXPUSHER_UID],
     }
@@ -77,7 +81,7 @@ def collect():
         if len(parts) >= 3:
             data["gpu_util"], data["mem_used"], data["mem_total"] = \
                 parts[0].strip(), parts[1].strip(), parts[2].strip()
-    data["nproc"] = sh(f"ps aux | grep train | grep -v grep | wc -l").strip()
+    data["nproc"] = sh(f"ps aux | grep -E '{TRAIN_PROC_PATTERN}' | grep -v grep | wc -l").strip()
     ckpt_lines = sh(f"ls {out}/ 2>/dev/null | grep -E '{STAGE1_PREFIX}|{STAGE2_PREFIX}|{FINAL_PATTERN}'").strip().splitlines()
     data["stage1_done"] = sum(1 for l in ckpt_lines if STAGE1_PREFIX in l)
     data["stage2_done"] = sum(1 for l in ckpt_lines if STAGE2_PREFIX in l)
@@ -92,7 +96,7 @@ def collect():
                         grad_norm=d.get("grad_norm"), global_step=d.get("global_step"))
         except Exception:
             pass
-    data["log_tail"] = sh(f"tail -30 {REMOTE}/{TRAIN_LOG} 2>/dev/null").strip()
+    data["log_tail"] = sh(f"tail -{TAIL_LINES} {REMOTE}/{TRAIN_LOG} 2>/dev/null").strip()
     data["summary"] = sh(f"cat {out}/train_summary.json 2>/dev/null").strip()
     data["epoch_summary"] = sh(f"cat {out}/epoch_summary.json 2>/dev/null").strip()
     return data
@@ -141,7 +145,7 @@ def build_text(s):
         lines.append(f"🔢 全局步数: {s['global_step']}")
     log = s.get("log_tail", "")
     if log:
-        losses = re.findall(r"loss=([\d.]+)", log[-2000:])
+        losses = re.findall(r"loss=(-?\d+(?:\.\d*)?(?:[eE][+-]?\d+)?)", log[-2000:])
         if losses:
             lines.append(f"📊 最近loss序列: {', '.join(f'{float(x):.4f}' for x in losses[-3:])}")
         for line in log.splitlines()[-10:]:
@@ -167,9 +171,9 @@ def check_anomaly(s):
         warns.append("检测到 Traceback 错误")
     if "cuda out of memory" in text or "out of memory" in text:
         warns.append("显存不足 OOM")
-    if "nan" in text:
+    if re.search(r"\bnan\b", text):
         warns.append("损失出现 NaN")
-    if "inf" in text:
+    if re.search(r"\binf\b", text):
         warns.append("损失出现 Inf")
     gn = s.get("grad_norm")
     if gn is not None and gn > 1e6:
@@ -180,6 +184,7 @@ def check_anomaly(s):
 def main():
     print(f"[{time.strftime('%H:%M:%S')}] 服务器训练监控已启动", flush=True)
     push("训练监控已启动", "服务器端每小时监控已就绪，训练开始后将每小时推送进度。")
+    final_confirmed = 0
     while True:
         try:
             s = collect()
@@ -192,6 +197,14 @@ def main():
                 title = "训练进度"
             push(title, text)
             print(f"[{time.strftime('%H:%M:%S')}] 已推送: {title}", flush=True)
+            if EXIT_AFTER_FINAL and s.get("has_final") == "yes" and s.get("nproc") == "0":
+                final_confirmed += 1
+                if final_confirmed >= 2:
+                    push("监控退出", "训练已完成且训练进程已退出,服务器监控自动结束。")
+                    print(f"[{time.strftime('%H:%M:%S')}] 训练完成,监控退出", flush=True)
+                    return
+            else:
+                final_confirmed = 0
         except Exception as e:
             push("监控异常", f"服务器监控出错: {e}")
             print(f"[{time.strftime('%H:%M:%S')}] 错误: {e}", flush=True)
